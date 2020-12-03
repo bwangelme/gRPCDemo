@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"gRPCDemo/pb"
+	"io"
 	"log"
 	"time"
 
@@ -29,6 +30,31 @@ func printFeature(client pb.RouteGuideClient, point *pb.Point) {
 		log.Fatalf("%v.GetFeatures(_) = _, %v: ", client, err)
 	}
 	log.Println(feature)
+}
+
+func printFeatures(client pb.RouteGuideClient, rect *pb.Rectangle) {
+	log.Printf("Looking for features within %v", rect)
+	ctx, cancel := context.WithTimeout( context.Background(), 10*time.Second)
+	defer cancel()
+	stream, err := client.ListFeatures(ctx, rect)
+	if err != nil {
+		log.Fatalf("%v.ListFeatures(_) = _, %v", client, err)
+	}
+
+	for {
+		feature, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("%v.ListFeatures(_) = _, %v", client, err)
+		}
+		log.Printf("Feature: name: %q, point: (%v, %v)\n",
+			feature.GetName(),
+			feature.GetLocation().GetLatitude(),
+			feature.GetLocation().GetLongitude(),
+		)
+	}
 }
 
 func main() {
@@ -57,4 +83,11 @@ func main() {
 	client := pb.NewRouteGuideClient(conn)
 
 	printFeature(client, &pb.Point{Latitude: 407838351, Longitude: -746143763})
+	// Looing for features missing
+	printFeature(client, &pb.Point{Latitude: 1, Longitude: 1})
+
+	printFeatures(client, &pb.Rectangle{
+		Lo: &pb.Point{Latitude: 400000000, Longitude: -750000000},
+		Hi: &pb.Point{Latitude: 420000000, Longitude: -730000000},
+	})
 }
