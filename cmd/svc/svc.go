@@ -18,9 +18,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/status"
 )
 
 var (
@@ -58,6 +56,7 @@ func (s *routeGuideServer) ListFeatures(rect *pb.Rectangle, stream pb.RouteGuide
 
 	return nil
 }
+
 func (s *routeGuideServer) RecordRoute(stream pb.RouteGuide_RecordRouteServer) error {
 	var pointCount, featureCount, distance int32
 	var lastPoint *pb.Point
@@ -90,8 +89,33 @@ func (s *routeGuideServer) RecordRoute(stream pb.RouteGuide_RecordRouteServer) e
 		lastPoint = point
 	}
 }
+
+// echo 服务，将客户端输入的节点返回回去
 func (s *routeGuideServer) RouteChat(stream pb.RouteGuide_RouteChatServer) error {
-	return status.Errorf(codes.Unimplemented, "method RouteChat not implemented")
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		key := serialize(in.Location)
+
+		s.mu.Lock()
+		s.routeNodes[key] = append(s.routeNodes[key], in)
+		// 这里复制一遍是为了防止当服务端写一个客户端的流时，另一个客户端修改了 routeNodes
+		// 这里不需要执行深拷贝的原因是，routeNodes 只会增加，不会修改
+		rn := make([]*pb.RouteNode, len(s.routeNodes[key]))
+		copy(rn, s.routeNodes[key])
+		s.mu.Unlock()
+
+		for _, note := range rn {
+			if err := stream.Send(note); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func toRadians(num float64) float64 {
@@ -131,6 +155,10 @@ func inRange(point *pb.Point, rect *pb.Rectangle) bool {
 		return true
 	}
 	return true
+}
+
+func serialize(point *pb.Point) string {
+	return fmt.Sprintf("%d %d", point.Latitude, point.Longitude)
 }
 
 func (s *routeGuideServer) loadFeatures(filename string) {

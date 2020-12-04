@@ -72,7 +72,7 @@ func runRecordRoute(client pb.RouteGuideClient) {
 		points = append(points, randomPoint(r))
 	}
 	points = append(points, &pb.Point{
-		Latitude: 408122808,
+		Latitude:  408122808,
 		Longitude: -743999179,
 	})
 	log.Printf("Traversing %d points", len(points))
@@ -94,6 +94,46 @@ func runRecordRoute(client pb.RouteGuideClient) {
 	}
 	log.Printf("Route summary: %v", reply)
 	log.Printf("Route summary time: %v Milliseconds", reply.ElapsedTime)
+}
+
+func runRouteChat(client pb.RouteGuideClient) {
+	notes := []*pb.RouteNode{
+		{Location: &pb.Point{Latitude: 0, Longitude: 1}, Message: "1st message"},
+		{Location: &pb.Point{Latitude: 0, Longitude: 2}, Message: "2nd message"},
+		{Location: &pb.Point{Latitude: 0, Longitude: 3}, Message: "3rd message"},
+		{Location: &pb.Point{Latitude: 0, Longitude: 1}, Message: "4th message"},
+		{Location: &pb.Point{Latitude: 0, Longitude: 2}, Message: "5th message"},
+		{Location: &pb.Point{Latitude: 0, Longitude: 3}, Message: "6th message"},
+	}
+	ctx, cancal := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancal()
+
+	stream, err := client.RouteChat(ctx)
+	if err != nil {
+		log.Fatalf("%v.RouteChat(_) = _, %v", client, err)
+	}
+	watic := make(chan struct{})
+	go func() {
+		for {
+			in, err := stream.Recv()
+			if err == io.EOF {
+				close(watic)
+				return
+			}
+			if err != nil {
+				log.Fatalf("failed to receive a note: %v", err)
+			}
+			log.Printf("Got message %s at point(%d,%d)", in.Message, in.Location.Latitude, in.Location.Longitude)
+		}
+	}()
+
+	for _, note := range notes {
+		if err := stream.Send(note); err != nil {
+			log.Fatalf("Failed to send note %v", err)
+		}
+	}
+	stream.CloseSend()
+	<-watic
 }
 
 func main() {
@@ -130,5 +170,6 @@ func main() {
 	//	Hi: &pb.Point{Latitude: 420000000, Longitude: -730000000},
 	//})
 
-	runRecordRoute(client)
+	//runRecordRoute(client)
+	runRouteChat(client)
 }
