@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"math"
 	"net"
 	"sync"
+	"time"
 
 	"gRPCDemo/pb"
 
@@ -57,10 +59,62 @@ func (s *routeGuideServer) ListFeatures(rect *pb.Rectangle, stream pb.RouteGuide
 	return nil
 }
 func (s *routeGuideServer) RecordRoute(stream pb.RouteGuide_RecordRouteServer) error {
-	return status.Errorf(codes.Unimplemented, "method RecordRoute not implemented")
+	var pointCount, featureCount, distance int32
+	var lastPoint *pb.Point
+
+	startTime := time.Now()
+	for {
+		point, err := stream.Recv()
+		if err == io.EOF {
+			endTime := time.Now()
+			return stream.SendAndClose(&pb.RouteSummary{
+				PointCount:   pointCount,
+				FeatureCount: featureCount,
+				Distance:     distance,
+				ElapsedTime:  int32(endTime.Sub(startTime).Milliseconds()),
+			})
+		}
+		if err != nil {
+			return err
+		}
+		pointCount++
+		for _, feature := range s.savedFeatures {
+			if proto.Equal(feature.Location, point) {
+				featureCount++
+			}
+		}
+		if lastPoint != nil {
+			distance += calcDistance(lastPoint, point)
+		}
+		time.Sleep(time.Millisecond * 10)
+		lastPoint = point
+	}
 }
 func (s *routeGuideServer) RouteChat(stream pb.RouteGuide_RouteChatServer) error {
 	return status.Errorf(codes.Unimplemented, "method RouteChat not implemented")
+}
+
+func toRadians(num float64) float64 {
+	return num * math.Pi / float64(180)
+}
+
+// calcDistance 计算两个节点之间的距离
+func calcDistance(p1 *pb.Point, p2 *pb.Point) int32 {
+	const CordFactor float64 = 1e7
+	const R = float64(6371000) // 地球半径
+
+	lat1 := toRadians(float64(p1.Latitude) / CordFactor)
+	lat2 := toRadians(float64(p2.Latitude) / CordFactor)
+	lng1 := toRadians(float64(p1.Longitude) / CordFactor)
+	lng2 := toRadians(float64(p2.Longitude) / CordFactor)
+	dlat := lat2 - lat1
+	dlng := lng2 - lng1
+
+	a := math.Sin(dlat/2)*math.Sin(dlat/2) + math.Cos(lat1)*math.Cos(lat2)*math.Sin(dlng/2)*math.Sin(dlng/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	distance := R * c
+	return int32(distance)
 }
 
 // inRange 判断 point 是否在 rect 所划定的范围内

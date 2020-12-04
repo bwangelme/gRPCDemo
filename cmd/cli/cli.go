@@ -7,6 +7,7 @@ import (
 	"gRPCDemo/pb"
 	"io"
 	"log"
+	"math/rand"
 	"time"
 
 	"google.golang.org/grpc"
@@ -34,7 +35,7 @@ func printFeature(client pb.RouteGuideClient, point *pb.Point) {
 
 func printFeatures(client pb.RouteGuideClient, rect *pb.Rectangle) {
 	log.Printf("Looking for features within %v", rect)
-	ctx, cancel := context.WithTimeout( context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	stream, err := client.ListFeatures(ctx, rect)
 	if err != nil {
@@ -55,6 +56,44 @@ func printFeatures(client pb.RouteGuideClient, rect *pb.Rectangle) {
 			feature.GetLocation().GetLongitude(),
 		)
 	}
+}
+
+func randomPoint(r *rand.Rand) *pb.Point {
+	lat := (r.Int31n(180) - 90) * 1e7
+	long := (r.Int31n(360) - 180) * 1e7
+	return &pb.Point{Latitude: lat, Longitude: long}
+}
+
+func runRecordRoute(client pb.RouteGuideClient) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	pointCount := int(r.Int31n(100)) + 2
+	var points []*pb.Point
+	for i := 0; i < pointCount; i++ {
+		points = append(points, randomPoint(r))
+	}
+	points = append(points, &pb.Point{
+		Latitude: 408122808,
+		Longitude: -743999179,
+	})
+	log.Printf("Traversing %d points", len(points))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	stream, err := client.RecordRoute(ctx)
+	if err != nil {
+		log.Fatalf("%v.RecordRoute(_) = _, %v", client, err)
+	}
+	for _, point := range points {
+		if err := stream.Send(point); err != nil {
+			log.Fatalf("%v.Send(%v) = %v", stream, point, err)
+		}
+	}
+	reply, err := stream.CloseAndRecv()
+	if err != nil {
+		log.Fatalf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
+	}
+	log.Printf("Route summary: %v", reply)
+	log.Printf("Route summary time: %v Milliseconds", reply.ElapsedTime)
 }
 
 func main() {
@@ -82,12 +121,14 @@ func main() {
 	defer conn.Close()
 	client := pb.NewRouteGuideClient(conn)
 
-	printFeature(client, &pb.Point{Latitude: 407838351, Longitude: -746143763})
-	// Looing for features missing
-	printFeature(client, &pb.Point{Latitude: 1, Longitude: 1})
+	//printFeature(client, &pb.Point{Latitude: 407838351, Longitude: -746143763})
+	//// Looking for features missing
+	//printFeature(client, &pb.Point{Latitude: 1, Longitude: 1})
+	//
+	//printFeatures(client, &pb.Rectangle{
+	//	Lo: &pb.Point{Latitude: 400000000, Longitude: -750000000},
+	//	Hi: &pb.Point{Latitude: 420000000, Longitude: -730000000},
+	//})
 
-	printFeatures(client, &pb.Rectangle{
-		Lo: &pb.Point{Latitude: 400000000, Longitude: -750000000},
-		Hi: &pb.Point{Latitude: 420000000, Longitude: -730000000},
-	})
+	runRecordRoute(client)
 }
