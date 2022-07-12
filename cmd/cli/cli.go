@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"gRPCDemo/pb"
 	"io"
 	"log"
@@ -136,6 +137,37 @@ func runRouteChat(client pb.RouteGuideClient) {
 	<-watic
 }
 
+func conversations(client pb.EchoClient) {
+	stream, err := client.Conversations(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for i := 0; i < 5; i++ {
+		err := stream.Send(&pb.StreamRequest{
+			Question: fmt.Sprintf("Stream client rpc %d", i),
+		})
+		if err != nil {
+			log.Fatalln(err)
+		}
+		res, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		log.Println(res.Answer)
+	}
+
+	err = stream.CloseSend()
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
 func main() {
 	flag.Parse()
 	var opts []grpc.DialOption
@@ -159,8 +191,8 @@ func main() {
 		log.Fatalf("failed to connect: %v", err)
 	}
 	defer conn.Close()
-	client := pb.NewRouteGuideClient(conn)
 
+	//client := pb.NewRouteGuideClient(conn)
 	//printFeature(client, &pb.Point{Latitude: 407838351, Longitude: -746143763})
 	//// Looking for features missing
 	//printFeature(client, &pb.Point{Latitude: 1, Longitude: 1})
@@ -171,5 +203,8 @@ func main() {
 	//})
 
 	//runRecordRoute(client)
-	runRouteChat(client)
+	//runRouteChat(client)
+
+	echoClient := pb.NewEchoClient(conn)
+	conversations(echoClient)
 }

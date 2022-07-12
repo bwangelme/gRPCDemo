@@ -40,3 +40,17 @@ message RouteSummary {
 
   int32 elapsed_time = 4;
 }
+
+message StreamRequest {
+  string question = 1;
+}
+
+message StreamResponse {
+  string answer = 1;
+}
+
+service Echo {
+  // 注意返回也要设置成 stream
+  // 要不然 response 就只有 sendAndClose 方法了
+  rpc Conversations(stream StreamRequest) returns (stream StreamResponse) {}
+}

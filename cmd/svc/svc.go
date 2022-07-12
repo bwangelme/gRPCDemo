@@ -29,8 +29,36 @@ var (
 	port       = flag.Int("port", 10000, "The Server port")
 )
 
+type echoServer struct {
+	pb.UnimplementedEchoServer
+}
+
+func (s *echoServer) Conversations(stream pb.Echo_ConversationsServer) error {
+	n := 1
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		err = stream.Send(&pb.StreamResponse{
+			Answer: fmt.Sprintf("Answer: %d, Question: %s", n, req.Question),
+		})
+		if err != nil {
+			return err
+		}
+		n++
+		log.Printf("from stream client question: %s", req.Question)
+	}
+
+}
+
 type routeGuideServer struct {
 	pb.UnimplementedRouteGuideServer
+
 	savedFeatures []*pb.Feature
 	mu            sync.Mutex
 	routeNodes    map[string][]*pb.RouteNode
@@ -90,6 +118,7 @@ func (s *routeGuideServer) RecordRoute(stream pb.RouteGuide_RecordRouteServer) e
 	}
 }
 
+// RouteChat
 // echo 服务，将客户端输入的节点返回回去
 func (s *routeGuideServer) RouteChat(stream pb.RouteGuide_RouteChatServer) error {
 	for {
@@ -212,6 +241,7 @@ func main() {
 	server := grpc.NewServer(opts...)
 	log.Printf("Listening on the %v\n", *port)
 	pb.RegisterRouteGuideServer(server, newServer())
+	pb.RegisterEchoServer(server, &echoServer{})
 	if err := server.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
